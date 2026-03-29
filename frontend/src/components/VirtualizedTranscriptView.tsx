@@ -257,8 +257,8 @@ export const VirtualizedTranscriptView: React.FC<VirtualizedTranscriptViewProps>
                         </>
                     ) : (
                         <>
-                            <p className="text-lg font-semibold">Welcome to meetily!</p>
-                            <p className="text-xs mt-1">Start recording to see live transcription</p>
+                            <p className="text-lg font-semibold">Ready to record</p>
+                            <p className="text-xs mt-1">Press the mic button to start</p>
                         </>
                     )}
                 </motion.div>
