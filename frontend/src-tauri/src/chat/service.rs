@@ -161,19 +161,19 @@ async fn get_summary_markdown(pool: &SqlitePool, meeting_id: &str) -> Option<Str
 }
 
 /// Apply any edit commands found in the LLM response.
+/// Both transcript and summary edits use the same find-and-replace pattern: old text -> new text
 /// Returns the response with edit markers stripped.
 async fn apply_edits(pool: &SqlitePool, meeting_id: &str, response: &str) -> String {
     let mut cleaned = response.to_string();
 
-    // Handle [EDIT_TRANSCRIPT] old text -> new text
     for line in response.lines() {
+        // Handle [EDIT_TRANSCRIPT] old text -> new text
         if let Some(edit) = line.strip_prefix("[EDIT_TRANSCRIPT]") {
             let edit = edit.trim();
             if let Some((old, new)) = edit.split_once("->") {
                 let old = old.trim();
                 let new = new.trim();
                 if !old.is_empty() && !new.is_empty() {
-                    // Update all transcript segments containing the old text
                     let result = sqlx::query(
                         "UPDATE transcripts SET transcript = REPLACE(transcript, $1, $2) WHERE meeting_id = $3 AND transcript LIKE '%' || $1 || '%'"
                     )
@@ -184,8 +184,42 @@ async fn apply_edits(pool: &SqlitePool, meeting_id: &str, response: &str) -> Str
                     .await;
 
                     match result {
-                        Ok(r) => info!("Transcript edit applied: {} rows updated ('{}'->'{}')", r.rows_affected(), old, new),
-                        Err(e) => warn!("Failed to apply transcript edit: {}", e),
+                        Ok(r) => info!("Transcript edit: {} rows ('{}'->'{}') for {}", r.rows_affected(), old, new, meeting_id),
+                        Err(e) => warn!("Transcript edit failed: {}", e),
+                    }
+                }
+            }
+            cleaned = cleaned.replace(line, "");
+        }
+
+        // Handle [EDIT_SUMMARY] old text -> new text (find-and-replace within existing summary)
+        if let Some(edit) = line.strip_prefix("[EDIT_SUMMARY]") {
+            let edit = edit.trim();
+            if let Some((old, new)) = edit.split_once("->") {
+                let old = old.trim();
+                let new = new.trim();
+                if !old.is_empty() && !new.is_empty() {
+                    // Fetch current summary, do find-replace, save back
+                    if let Some(current_md) = get_summary_markdown(pool, meeting_id).await {
+                        let updated_md = current_md.replace(old, new);
+                        if updated_md != current_md {
+                            let result_json = serde_json::json!({
+                                "markdown": updated_md,
+                            }).to_string();
+                            let result = sqlx::query(
+                                "UPDATE summary_processes SET result = $1, updated_at = datetime('now') WHERE meeting_id = $2"
+                            )
+                            .bind(&result_json)
+                            .bind(meeting_id)
+                            .execute(pool)
+                            .await;
+                            match result {
+                                Ok(r) => info!("Summary edit: {} rows ('{}'->'{}') for {}", r.rows_affected(), old, new, meeting_id),
+                                Err(e) => warn!("Summary edit failed: {}", e),
+                            }
+                        } else {
+                            warn!("Summary edit: '{}' not found in summary for {}", old, meeting_id);
+                        }
                     }
                 }
             }
@@ -193,28 +227,41 @@ async fn apply_edits(pool: &SqlitePool, meeting_id: &str, response: &str) -> Str
         }
     }
 
-    // Handle [EDIT_SUMMARY] new summary content
-    if let Some(idx) = response.find("[EDIT_SUMMARY]") {
-        let summary_content = response[idx + "[EDIT_SUMMARY]".len()..].trim();
-        if !summary_content.is_empty() {
-            let result_json = serde_json::json!({
-                "markdown": summary_content,
-            }).to_string();
+    // Fallback: detect "old" → "new" patterns even without markers
+    // Catches cases like: "zone week" → "design week" or "zone week" -> "design week"
+    let fallback_patterns = [" → ", " -> "];
+    for pattern in fallback_patterns {
+        for line in response.lines() {
+            let trimmed = line.trim();
+            // Skip lines that already had markers (already processed above)
+            if trimmed.starts_with("[EDIT_") { continue; }
+            // Look for quoted "old" → "new" patterns
+            if trimmed.contains(pattern) {
+                if let Some((left, right)) = trimmed.split_once(pattern) {
+                    let old = left.trim().trim_matches('"').trim_matches('\'').trim_matches('`').trim();
+                    let new_text = right.trim().trim_matches('"').trim_matches('\'').trim_matches('`').trim();
+                    if old.len() >= 3 && new_text.len() >= 3 && old != new_text {
+                        // Try transcript edit
+                        let _ = sqlx::query(
+                            "UPDATE transcripts SET transcript = REPLACE(transcript, $1, $2) WHERE meeting_id = $3 AND transcript LIKE '%' || $1 || '%'"
+                        )
+                        .bind(old).bind(new_text).bind(meeting_id)
+                        .execute(pool).await;
 
-            let result = sqlx::query(
-                "UPDATE summary_processes SET result = $1, updated_at = datetime('now') WHERE meeting_id = $2"
-            )
-            .bind(&result_json)
-            .bind(meeting_id)
-            .execute(pool)
-            .await;
-
-            match result {
-                Ok(r) => info!("Summary edit applied for meeting {}: {} rows", meeting_id, r.rows_affected()),
-                Err(e) => warn!("Failed to apply summary edit: {}", e),
+                        // Try summary edit
+                        if let Some(current_md) = get_summary_markdown(pool, meeting_id).await {
+                            let updated = current_md.replace(old, new_text);
+                            if updated != current_md {
+                                let result_json = serde_json::json!({"markdown": updated}).to_string();
+                                let _ = sqlx::query(
+                                    "UPDATE summary_processes SET result = $1, updated_at = datetime('now') WHERE meeting_id = $2"
+                                ).bind(&result_json).bind(meeting_id).execute(pool).await;
+                                info!("Fallback edit applied: '{}' -> '{}' for {}", old, new_text, meeting_id);
+                            }
+                        }
+                    }
+                }
             }
-
-            cleaned = cleaned.replace(&format!("[EDIT_SUMMARY] {}", summary_content), "");
         }
     }
 
@@ -465,11 +512,19 @@ fn build_meeting_system_prompt(transcript: &str, summary: Option<&str>) -> Strin
         "You are a helpful meeting assistant. Answer the user's question based on the meeting content provided below. \
          Be specific and cite relevant parts of the transcript when appropriate. \
          If the answer is not found in the meeting content, say so.\n\n\
-         You can also help edit the transcript or summary when the user asks. If the user wants to:\n\
-         - Fix or correct something in the transcript, respond with: [EDIT_TRANSCRIPT] old text -> new text\n\
-         - Add or change something in the summary, respond with: [EDIT_SUMMARY] the updated summary section\n\
-         - Fix a name that was misheard, respond with: [EDIT_TRANSCRIPT] wrong name -> correct name\n\
-         Always confirm what you changed after making an edit.\n\n",
+         When the user asks to fix, correct, change, or update something in the transcript or summary, you MUST respond with edit commands.\n\
+         You MUST start your response with the edit commands on their own lines BEFORE any explanation.\n\n\
+         Edit command format (REQUIRED — these trigger automatic database updates):\n\
+         [EDIT_TRANSCRIPT] exact old text that appears in transcript -> replacement text\n\
+         [EDIT_SUMMARY] exact old text that appears in summary -> replacement text\n\n\
+         Rules:\n\
+         - Include enough surrounding context in the old text to only match the specific instance you want to change\n\
+         - The old text MUST match exactly what's in the document (check the transcript/summary above)\n\
+         - Put each edit on its own line\n\
+         - After all edit lines, add a brief confirmation\n\n\
+         Example — user says 'that was Shira not Kelly for the LinkedIn group task':\n\
+         [EDIT_SUMMARY] **Kelly** | Start a LinkedIn message group -> **Shira** | Start a LinkedIn message group\n\
+         Updated the attribution from Kelly to Shira for the LinkedIn message group action item.\n\n",
     );
 
     if let Some(s) = summary {

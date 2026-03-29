@@ -161,6 +161,14 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
+
+      // If the response likely contained edits, trigger a refresh of the meeting data
+      const lowerQuestion = question.toLowerCase();
+      const editKeywords = ['fix', 'correct', 'change', 'update', 'replace', 'rename', 'wrong', 'should be', 'was actually', 'not '];
+      if (editKeywords.some(k => lowerQuestion.includes(k))) {
+        // Dispatch event so meeting detail page re-fetches transcript + summary
+        window.dispatchEvent(new CustomEvent('meeting-data-edited', { detail: { meetingId } }));
+      }
     } catch (error) {
       console.error('[ChatPanel] Error asking question:', error);
       const errorMessage: ChatMessageData = {

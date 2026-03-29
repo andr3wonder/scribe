@@ -312,6 +312,35 @@ function MeetingDetailsContent() {
     loadData();
   }, [meetingId]);
 
+  // Re-fetch meeting data when chat edits are applied
+  useEffect(() => {
+    const handleEdit = async (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.meetingId === meetingId) {
+        console.log('[MeetingDetails] Chat edit detected, refreshing data...');
+        // Re-fetch summary
+        try {
+          const summary = await invoke('api_get_summary', { meetingId }) as any;
+          if (summary.data) {
+            let parsed = summary.data;
+            if (typeof parsed === 'string') {
+              try { parsed = JSON.parse(parsed); } catch {}
+            }
+            if (parsed.markdown) {
+              setMeetingSummary(parsed);
+            }
+          }
+        } catch (e) {
+          console.warn('Failed to refresh summary after edit:', e);
+        }
+        // Re-fetch transcripts
+        refetch();
+      }
+    };
+    window.addEventListener('meeting-data-edited', handleEdit);
+    return () => window.removeEventListener('meeting-data-edited', handleEdit);
+  }, [meetingId, refetch]);
+
   // Auto-generation check: runs when meeting is loaded with no summary
   useEffect(() => {
     const checkAutoGen = async () => {
