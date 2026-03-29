@@ -1,4 +1,4 @@
-use tauri::{command, AppHandle, Emitter, State};
+use tauri::{command, AppHandle, Emitter, Manager, State};
 use crate::audio::{
     start_system_audio_capture, list_system_audio_devices, check_system_audio_permissions,
     SystemAudioDetector, SystemAudioEvent, new_system_audio_callback
@@ -17,7 +17,26 @@ pub async fn start_system_audio_monitoring_internal(app_handle: AppHandle) -> Re
         match event {
             SystemAudioEvent::SystemAudioStarted(apps) => {
                 tracing::info!("System audio started by apps: {:?}", apps);
-                let _ = app_handle.emit("system-audio-started", apps);
+                let _ = app_handle.emit("system-audio-started", apps.clone());
+
+                // Send system-level notification (shows even when app is in background)
+                let body = if apps.is_empty() {
+                    "An app is using your microphone".to_string()
+                } else {
+                    format!("{} is using audio — click to start recording", apps.join(", "))
+                };
+                use tauri_plugin_notification::NotificationExt;
+                let _ = app_handle.notification()
+                    .builder()
+                    .title("Meeting detected")
+                    .body(&body)
+                    .show();
+
+                // Bring app window to front
+                if let Some(window) = app_handle.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
             }
             SystemAudioEvent::SystemAudioStopped => {
                 let _ = app_handle.emit("system-audio-stopped", ());
@@ -27,7 +46,6 @@ pub async fn start_system_audio_monitoring_internal(app_handle: AppHandle) -> Re
     });
 
     detector.start(callback);
-    // Leak the detector so it runs forever (app lifetime)
     std::mem::forget(detector);
     Ok(())
 }
