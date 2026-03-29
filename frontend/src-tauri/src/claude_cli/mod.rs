@@ -96,3 +96,4 @@ pub async fn generate(system_prompt: &str, user_prompt: &str) -> Result<String> 
 pub fn is_available() -> bool {
     find_claude_binary().is_ok()
 }
+

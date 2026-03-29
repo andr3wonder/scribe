@@ -263,17 +263,32 @@ impl SummaryService {
                 );
                 info!("final markdown is {}", &final_markdown);
 
-                // Extract and update meeting name if present
+                // Extract and update meeting name if present — but only if the user
+                // hasn't already set a custom title (avoid overwriting manual edits)
                 if let Some(name) = extract_meeting_name_from_markdown(&final_markdown) {
                     if !name.is_empty() {
-                        info!(
-                            "Updating meeting name to '{}' for meeting_id: {}",
-                            name, meeting_id
-                        );
-                        if let Err(e) =
-                            MeetingsRepository::update_meeting_title(&pool, &meeting_id, &name).await
-                        {
-                            error!("Failed to update meeting name for {}: {}", meeting_id, e);
+                        // Check if the current title looks auto-generated
+                        let should_update = match MeetingsRepository::get_meeting(&pool, &meeting_id).await {
+                            Ok(Some(meeting)) => {
+                                let t = &meeting.title;
+                                t.starts_with("Meeting ") || t.starts_with("New Meeting") || t.starts_with("+ New")
+                                    || t.starts_with("Imported") || t.is_empty()
+                            }
+                            _ => true, // If we can't fetch, update anyway
+                        };
+
+                        if should_update {
+                            info!(
+                                "Updating meeting name to '{}' for meeting_id: {}",
+                                name, meeting_id
+                            );
+                            if let Err(e) =
+                                MeetingsRepository::update_meeting_title(&pool, &meeting_id, &name).await
+                            {
+                                error!("Failed to update meeting name for {}: {}", meeting_id, e);
+                            }
+                        } else {
+                            info!("Keeping existing custom title for meeting_id: {}", meeting_id);
                         }
 
                         // Strip the title line from markdown

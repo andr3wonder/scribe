@@ -160,6 +160,67 @@ async fn get_summary_markdown(pool: &SqlitePool, meeting_id: &str) -> Option<Str
     }
 }
 
+/// Apply any edit commands found in the LLM response.
+/// Returns the response with edit markers stripped.
+async fn apply_edits(pool: &SqlitePool, meeting_id: &str, response: &str) -> String {
+    let mut cleaned = response.to_string();
+
+    // Handle [EDIT_TRANSCRIPT] old text -> new text
+    for line in response.lines() {
+        if let Some(edit) = line.strip_prefix("[EDIT_TRANSCRIPT]") {
+            let edit = edit.trim();
+            if let Some((old, new)) = edit.split_once("->") {
+                let old = old.trim();
+                let new = new.trim();
+                if !old.is_empty() && !new.is_empty() {
+                    // Update all transcript segments containing the old text
+                    let result = sqlx::query(
+                        "UPDATE transcripts SET transcript = REPLACE(transcript, $1, $2) WHERE meeting_id = $3 AND transcript LIKE '%' || $1 || '%'"
+                    )
+                    .bind(old)
+                    .bind(new)
+                    .bind(meeting_id)
+                    .execute(pool)
+                    .await;
+
+                    match result {
+                        Ok(r) => info!("Transcript edit applied: {} rows updated ('{}'->'{}')", r.rows_affected(), old, new),
+                        Err(e) => warn!("Failed to apply transcript edit: {}", e),
+                    }
+                }
+            }
+            cleaned = cleaned.replace(line, "");
+        }
+    }
+
+    // Handle [EDIT_SUMMARY] new summary content
+    if let Some(idx) = response.find("[EDIT_SUMMARY]") {
+        let summary_content = response[idx + "[EDIT_SUMMARY]".len()..].trim();
+        if !summary_content.is_empty() {
+            let result_json = serde_json::json!({
+                "markdown": summary_content,
+            }).to_string();
+
+            let result = sqlx::query(
+                "UPDATE summary_processes SET result = $1, updated_at = datetime('now') WHERE meeting_id = $2"
+            )
+            .bind(&result_json)
+            .bind(meeting_id)
+            .execute(pool)
+            .await;
+
+            match result {
+                Ok(r) => info!("Summary edit applied for meeting {}: {} rows", meeting_id, r.rows_affected()),
+                Err(e) => warn!("Failed to apply summary edit: {}", e),
+            }
+
+            cleaned = cleaned.replace(&format!("[EDIT_SUMMARY] {}", summary_content), "");
+        }
+    }
+
+    cleaned.trim().to_string()
+}
+
 /// Ask a question about a specific meeting's transcript.
 ///
 /// 1. Fetches the meeting's transcript from DB
@@ -205,9 +266,12 @@ pub async fn ask_question(
     }
 
     // 6. Call LLM
-    let response = call_llm(config, &system_prompt, &enriched_prompt).await?;
+    let raw_response = call_llm(config, &system_prompt, &enriched_prompt).await?;
 
-    // 6. Persist both messages
+    // 7. Apply any edit commands (transcript/summary fixes) and clean the response
+    let response = apply_edits(pool, meeting_id, &raw_response).await;
+
+    // 8. Persist both messages
     ChatMessagesRepository::insert_message(pool, meeting_id, "user", question)
         .await
         .map_err(|e| format!("Failed to save user message: {}", e))?;
@@ -400,7 +464,12 @@ fn build_meeting_system_prompt(transcript: &str, summary: Option<&str>) -> Strin
     let mut prompt = String::from(
         "You are a helpful meeting assistant. Answer the user's question based on the meeting content provided below. \
          Be specific and cite relevant parts of the transcript when appropriate. \
-         If the answer is not found in the meeting content, say so.\n\n",
+         If the answer is not found in the meeting content, say so.\n\n\
+         You can also help edit the transcript or summary when the user asks. If the user wants to:\n\
+         - Fix or correct something in the transcript, respond with: [EDIT_TRANSCRIPT] old text -> new text\n\
+         - Add or change something in the summary, respond with: [EDIT_SUMMARY] the updated summary section\n\
+         - Fix a name that was misheard, respond with: [EDIT_TRANSCRIPT] wrong name -> correct name\n\
+         Always confirm what you changed after making an edit.\n\n",
     );
 
     if let Some(s) = summary {

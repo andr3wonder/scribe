@@ -472,21 +472,8 @@ pub fn run() {
                 }
             });
 
-            // Preload the recommended LLM model so first request is fast
-            tauri::async_runtime::spawn(async move {
-                if let Ok(app_data_dir) = app_handle_for_warmup.path().app_data_dir() {
-                    // Get recommended model
-                    let model_name = match summary::summary_engine::commands::builtin_ai_get_recommended_model().await {
-                        Ok(name) => name,
-                        Err(_) => "gemma3:4b".to_string(),
-                    };
-                    log::info!("Preloading LLM model: {}", model_name);
-                    match summary::summary_engine::client::warmup_model(&app_data_dir, &model_name).await {
-                        Ok(_) => log::info!("LLM model preloaded successfully: {}", model_name),
-                        Err(e) => log::warn!("LLM model preload failed (will load on first use): {}", e),
-                    }
-                }
-            });
+            // Qwen preloading disabled — using claude -p as default provider
+            let _ = app_handle_for_warmup; // suppress unused warning
 
             // Trigger system audio permission request on startup (similar to microphone permission)
             // #[cfg(target_os = "macos")]
