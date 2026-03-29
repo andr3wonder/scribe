@@ -96,7 +96,8 @@
     ],
     "resources": [
       "templates/*.json",
-      "icons/tray_icon.png"
+      "icons/tray_icon.png",
+      "icons/tray_icon@2x.png"
     ],
     "externalBin": [
       "binaries/llama-helper",

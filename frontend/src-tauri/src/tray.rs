@@ -21,10 +21,19 @@ pub fn create_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     // Pass can_record=true initially, will be updated by update_tray_menu immediately
     let menu = build_menu(app, RecordingState::Stopped, true)?;
 
+    // Load waveform tray icon (raw RGBA with 8-byte header: width u32 LE + height u32 LE)
+    let tray_icon = {
+        let raw = include_bytes!("../icons/tray_icon.rgba");
+        let width = u32::from_le_bytes([raw[0], raw[1], raw[2], raw[3]]);
+        let height = u32::from_le_bytes([raw[4], raw[5], raw[6], raw[7]]);
+        let rgba_data = raw[8..].to_vec();
+        tauri::image::Image::new_owned(rgba_data, width, height)
+    };
+
     TrayIconBuilder::with_id("main-tray")
         .menu(&menu)
         .tooltip("Scribe")
-        .icon(app.default_window_icon().unwrap().clone())
+        .icon(tray_icon)
         .icon_as_template(true)
         .on_menu_event(|app, event| handle_menu_event(app, event.id.as_ref()))
         .build(app)?;
