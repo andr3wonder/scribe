@@ -405,6 +405,14 @@ pub fn run() {
         )) as NotificationManagerState<tauri::Wry>)
         .manage(audio::init_system_audio_state())
         .manage(summary::summary_engine::ModelManagerState(Arc::new(tokio::sync::Mutex::new(None))))
+        .on_window_event(|window, event| {
+            // Hide window instead of closing — app stays in menu bar
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = window.hide();
+                log::info!("Window hidden (app still running in menu bar)");
+            }
+        })
         .setup(|_app| {
             log::info!("Application setup complete");
 

@@ -94,16 +94,20 @@ export default function RootLayout({
       unlistenStart = await listen<string[]>('system-audio-started', (event) => {
         const apps = event.payload || [];
         console.log('[Layout] System audio detected:', apps);
-        toast('Meeting detected', {
-          description: apps.length > 0 ? `${apps.join(', ')} is using audio` : 'An app is using your microphone',
-          action: {
-            label: 'Start Recording',
-            onClick: () => {
-              window.dispatchEvent(new CustomEvent('start-recording-from-sidebar'));
+        // System notification is sent from Rust backend
+        // Only show in-app toast if window is already visible/focused
+        if (document.visibilityState === 'visible') {
+          toast('Meeting detected', {
+            description: apps.length > 0 ? `${apps.join(', ')} is using audio` : 'An app is using your microphone',
+            action: {
+              label: 'Start Recording',
+              onClick: () => {
+                window.dispatchEvent(new CustomEvent('start-recording-from-sidebar'));
+              },
             },
-          },
-          duration: 15000,
-        });
+            duration: 15000,
+          });
+        }
       });
 
       unlistenStop = await listen('system-audio-stopped', () => {
