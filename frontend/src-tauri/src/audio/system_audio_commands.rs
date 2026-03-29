@@ -19,16 +19,16 @@ pub async fn start_system_audio_monitoring_internal(app_handle: AppHandle) -> Re
                 tracing::info!("System audio started by apps: {:?}", apps);
                 let _ = app_handle.emit("system-audio-started", apps.clone());
 
-                // Send system-level notification only (don't steal focus)
+                // Send system notification
                 let body = if apps.is_empty() {
-                    "An app is using your microphone".to_string()
+                    "Click to start transcribing".to_string()
                 } else {
-                    format!("{} is using audio", apps.join(", "))
+                    format!("{} — Click to start transcribing", apps.join(", "))
                 };
                 use tauri_plugin_notification::NotificationExt;
                 let _ = app_handle.notification()
                     .builder()
-                    .title("Meeting detected — Start transcribing?")
+                    .title("Meeting detected")
                     .body(&body)
                     .show();
             }

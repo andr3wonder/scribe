@@ -113,6 +113,12 @@ export default function RootLayout({
       unlistenStop = await listen('system-audio-stopped', () => {
         console.log('[Layout] System audio stopped');
       });
+
+      // When user clicks the system notification, auto-start recording
+      const unlistenNotifClick = await listen('start-recording-from-notification', () => {
+        console.log('[Layout] Start recording from notification click');
+        window.dispatchEvent(new CustomEvent('start-recording-from-sidebar'));
+      });
     };
 
     setup();
