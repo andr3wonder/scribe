@@ -491,6 +491,15 @@ pub fn run() {
             })
             .expect("Failed to initialize database");
 
+            // Start system audio monitoring (detect when Zoom/Teams/etc use audio)
+            let app_handle_for_audio_monitor = _app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                match audio::system_audio_commands::start_system_audio_monitoring_internal(app_handle_for_audio_monitor).await {
+                    Ok(_) => log::info!("System audio monitoring started"),
+                    Err(e) => log::warn!("Failed to start system audio monitoring: {}", e),
+                }
+            });
+
             // Initialize bundled templates directory for dynamic template discovery
             log::info!("Initializing bundled templates directory...");
             if let Ok(resource_path) = _app.handle().path().resource_dir() {

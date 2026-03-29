@@ -85,6 +85,39 @@ export default function RootLayout({
   }, [])
 
 
+  // Listen for system audio events (detect when Zoom/Teams/Meet starts)
+  useEffect(() => {
+    let unlistenStart: (() => void) | undefined;
+    let unlistenStop: (() => void) | undefined;
+
+    const setup = async () => {
+      unlistenStart = await listen<string[]>('system-audio-started', (event) => {
+        const apps = event.payload || [];
+        console.log('[Layout] System audio detected:', apps);
+        toast('Meeting detected', {
+          description: apps.length > 0 ? `${apps.join(', ')} is using audio` : 'An app is using your microphone',
+          action: {
+            label: 'Start Recording',
+            onClick: () => {
+              window.dispatchEvent(new CustomEvent('start-recording-from-sidebar'));
+            },
+          },
+          duration: 15000,
+        });
+      });
+
+      unlistenStop = await listen('system-audio-stopped', () => {
+        console.log('[Layout] System audio stopped');
+      });
+    };
+
+    setup();
+    return () => {
+      unlistenStart?.();
+      unlistenStop?.();
+    };
+  }, []);
+
   // Disable context menu in production
   useEffect(() => {
     if (process.env.NODE_ENV === 'production') {

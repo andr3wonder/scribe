@@ -9,6 +9,29 @@ use anyhow::Result;
 // Global state for system audio detector
 type SystemAudioDetectorState = Arc<Mutex<Option<SystemAudioDetector>>>;
 
+/// Start system audio monitoring without requiring Tauri State (for startup use)
+pub async fn start_system_audio_monitoring_internal(app_handle: AppHandle) -> Result<(), String> {
+    let mut detector = SystemAudioDetector::new();
+
+    let callback = new_system_audio_callback(move |event| {
+        match event {
+            SystemAudioEvent::SystemAudioStarted(apps) => {
+                tracing::info!("System audio started by apps: {:?}", apps);
+                let _ = app_handle.emit("system-audio-started", apps);
+            }
+            SystemAudioEvent::SystemAudioStopped => {
+                let _ = app_handle.emit("system-audio-stopped", ());
+                tracing::info!("System audio stopped");
+            }
+        }
+    });
+
+    detector.start(callback);
+    // Leak the detector so it runs forever (app lifetime)
+    std::mem::forget(detector);
+    Ok(())
+}
+
 /// Start system audio capture (for capturing system output audio)
 #[command]
 pub async fn start_system_audio_capture_command() -> Result<String, String> {
