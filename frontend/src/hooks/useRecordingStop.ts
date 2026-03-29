@@ -1,10 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { toast } from 'sonner';
 import { useTranscripts } from '@/contexts/TranscriptContext';
 import { useSidebar } from '@/components/Sidebar/SidebarProvider';
 import { useRecordingState, RecordingStatus } from '@/contexts/RecordingStateContext';
+import { useConfig } from '@/contexts/ConfigContext';
 import { storageService } from '@/services/storageService';
 import { transcriptService } from '@/services/transcriptService';
 import Analytics from '@/lib/analytics';
@@ -64,6 +66,7 @@ export function useRecordingStop(
   } = useSidebar();
 
   const router = useRouter();
+  const { modelConfig } = useConfig();
 
   // Guard to prevent duplicate/concurrent stop calls (e.g., from UI and tray simultaneously)
   const stopInProgressRef = useRef(false);
@@ -291,6 +294,40 @@ export function useRecordingStop(
             setCurrentMeeting({ id: meetingId, title: savedMeetingName || meetingTitle || 'New Meeting' });
           }
 
+          // Auto-generate summary in background
+          try {
+            const fullTranscript = freshTranscripts.map(t => t.text).join('\n');
+            if (fullTranscript.trim().length > 10) {
+              console.log('🤖 Auto-generating summary with', modelConfig.provider, modelConfig.model);
+              toast.info('Generating summary...', {
+                description: `Using ${modelConfig.provider}/${modelConfig.model}`,
+                duration: 5000,
+              });
+              // Fire and forget — invoke returns process_id immediately, summary runs in background
+              invoke('api_process_transcript', {
+                text: fullTranscript,
+                model: modelConfig.provider,
+                modelName: modelConfig.model,
+                meetingId,
+                chunkSize: 40000,
+                overlap: 1000,
+                customPrompt: '',
+                templateId: 'standard_meeting',
+              }).then((result: any) => {
+                console.log('✅ Auto-summary started, process_id:', result?.process_id);
+                // Summary is generating in background — the meeting detail page will poll for status
+              }).catch((err: unknown) => {
+                console.warn('Auto-summary failed:', err);
+                toast.error('Summary generation failed', {
+                  description: String(err),
+                  duration: 5000,
+                });
+              });
+            }
+          } catch (summaryError) {
+            console.warn('Auto-summary trigger failed:', summaryError);
+          }
+
           // Mark as completed
           setStatus(RecordingStatus.COMPLETED);
 
@@ -407,6 +444,7 @@ export function useRecordingStop(
     meetings,
     setIsMeetingActive,
     router,
+    modelConfig,
   ]);
 
   // Expose handleRecordingStop function to window for Rust callbacks

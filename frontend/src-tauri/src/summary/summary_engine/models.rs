@@ -54,6 +54,9 @@ pub struct ModelDef {
     /// Model layer count (for GPU offloading calculation)
     pub layer_count: u32,
 
+    /// Max tokens for generation (chain-of-thought models need more)
+    pub max_tokens: i32,
+
     /// Sampling parameters for this model
     pub sampling: SamplingParams,
 
@@ -73,8 +76,9 @@ pub fn get_available_models() -> Vec<ModelDef> {
             template: "gemma3".to_string(),
             download_url: "https://meetily.towardsgeneralintelligence.com/models/gemma-3-1b-it-Q8_0.gguf".to_string(),
             size_mb: 1019,
-            context_size: 32768, 
-            layer_count: 26,     
+            context_size: 32768,
+            layer_count: 26,
+            max_tokens: 4096,
             sampling: SamplingParams {
                 temperature: 1.0,
                 top_k: 64,
@@ -90,8 +94,9 @@ pub fn get_available_models() -> Vec<ModelDef> {
             template: "gemma3".to_string(),
             download_url: "https://meetily.towardsgeneralintelligence.com/models/gemma-3-4b-it-Q4_K_M.gguf".to_string(),
             size_mb: 2374,
-            context_size: 32768, // Supports 128k, but 32k is good for local·
+            context_size: 32768,
             layer_count: 35,
+            max_tokens: 4096,
             sampling: SamplingParams {
                 temperature: 1.0,
                 top_k: 64,
@@ -99,6 +104,27 @@ pub fn get_available_models() -> Vec<ModelDef> {
                 stop_tokens: vec!["<end_of_turn>".to_string()],
             },
             description: "Balanced model. Great quality/speed trade-off. Requires ~3.5GB RAM.".to_string(),
+        },
+        // Qwen 3.5 4B - Best quality with chain-of-thought reasoning
+        ModelDef {
+            name: "qwen3.5:4b".to_string(),
+            display_name: "Qwen 3.5 4B (Recommended)".to_string(),
+            gguf_file: "Qwen3.5-4B-Q4_K_M.gguf".to_string(),
+            template: "chatml".to_string(),
+            download_url: "https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/resolve/main/Qwen3.5-4B-Q4_K_M.gguf".to_string(),
+            size_mb: 2800,
+            context_size: 32768,
+            layer_count: 36,
+            max_tokens: 4096,
+            sampling: SamplingParams {
+                temperature: 0.7,
+                top_k: 40,
+                top_p: 0.9,
+                // Note: <|im_end|> is a special token that doesn't appear in decoded text.
+                // llama-helper handles EOS internally. These are backup text-based stops.
+                stop_tokens: vec!["<|im_end|>".to_string(), "<|endoftext|>".to_string(), "\n\n\n".to_string()],
+            },
+            description: "Best quality model. Chain-of-thought reasoning for detailed summaries and Q&A. Requires ~4GB RAM.".to_string(),
         },
     ]
 }
@@ -145,6 +171,15 @@ pub const GEMMA3_TEMPLATE: &str = "\
 <start_of_turn>model
 ";
 
+/// ChatML template (used by Qwen, Yi, and other models)
+pub const CHATML_TEMPLATE: &str = "\
+<|im_start|>system
+{system_prompt}<|im_end|>
+<|im_start|>user
+{user_prompt}<|im_end|>
+<|im_start|>assistant
+";
+
 /// Format a prompt using the specified template
 ///
 /// # Arguments
@@ -161,6 +196,7 @@ pub fn format_prompt(
 ) -> Result<String> {
     let template = match template_name {
         "gemma3" => GEMMA3_TEMPLATE,
+        "chatml" => CHATML_TEMPLATE,
         _ => return Err(anyhow!("Unknown template: {}", template_name)),
     };
 
@@ -175,7 +211,7 @@ pub fn format_prompt(
 // Configuration Constants
 // ============================================================================
 
-/// Default max tokens for generation (increased for better summary quality)
+/// Default max tokens for generation (used as fallback).
 pub const DEFAULT_MAX_TOKENS: i32 = 4096;
 
 /// Idle timeout for sidecar (seconds) - can be overridden via LLAMA_IDLE_TIMEOUT env var

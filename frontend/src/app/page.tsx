@@ -18,6 +18,7 @@ import { useRecordingStart } from '@/hooks/useRecordingStart';
 import { useRecordingStop } from '@/hooks/useRecordingStop';
 import { useTranscriptRecovery } from '@/hooks/useTranscriptRecovery';
 import { TranscriptRecovery } from '@/components/TranscriptRecovery';
+import { ChatPanel } from '@/components/ChatPanel';
 import { indexedDBService } from '@/services/indexedDBService';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
@@ -218,6 +219,13 @@ export default function Home() {
           isStopping={isStopping}
           showModal={showModal}
         />
+
+        {/* Live recording chat - ask questions about the in-progress transcript */}
+        {recordingState.isRecording && (
+          <div className="w-[380px] flex-shrink-0 border-l border-gray-200 flex flex-col">
+            <ChatPanel className="flex-1" />
+          </div>
+        )}
 
         {/* Recording controls - only show when permissions are granted or already recording and not showing status messages */}
         {(hasMicrophone || isRecording) &&

@@ -24,6 +24,7 @@ import { UpdateCheckProvider } from '@/components/UpdateCheckProvider'
 import { RecordingPostProcessingProvider } from '@/contexts/RecordingPostProcessingProvider'
 import { ImportAudioDialog, ImportDropOverlay } from '@/components/ImportAudio'
 import { ImportDialogProvider } from '@/contexts/ImportDialogContext'
+import { ImportTranscriptDialog } from '@/components/ImportTranscript'
 import { isAudioExtension, getAudioFormatsDisplayList } from '@/constants/audioFormats'
 
 
@@ -75,6 +76,16 @@ export default function RootLayout({
   const [showDropOverlay, setShowDropOverlay] = useState(false)
   const [showImportDialog, setShowImportDialog] = useState(false)
   const [importFilePath, setImportFilePath] = useState<string | null>(null)
+
+  // Import transcript state
+  const [showImportTranscript, setShowImportTranscript] = useState(false)
+
+  // Listen for import transcript event from sidebar
+  useEffect(() => {
+    const handler = () => setShowImportTranscript(true);
+    window.addEventListener('open-import-transcript', handler);
+    return () => window.removeEventListener('open-import-transcript', handler);
+  }, [])
 
   useEffect(() => {
     // Check onboarding status first
@@ -262,6 +273,10 @@ export default function RootLayout({
                                 showImportDialog={showImportDialog}
                                 handleImportDialogClose={handleImportDialogClose}
                                 importFilePath={importFilePath}
+                              />
+                              <ImportTranscriptDialog
+                                isOpen={showImportTranscript}
+                                onClose={() => setShowImportTranscript(false)}
                               />
                             </ImportDialogProvider>
                           </RecordingPostProcessingProvider>

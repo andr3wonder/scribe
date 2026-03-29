@@ -72,6 +72,50 @@ async fn get_sidecar_manager() -> Result<Arc<SidecarManager>> {
         .ok_or_else(|| anyhow!("Sidecar manager not initialized. Call init_sidecar_manager first."))
 }
 
+/// Preload a model into the sidecar so the first real request is fast.
+/// Call this at app startup with the recommended model.
+pub async fn warmup_model(app_data_dir: &PathBuf, model_name: &str) -> Result<()> {
+    log::info!("Warming up model: {}", model_name);
+
+    let model_path = get_cached_model_path(app_data_dir, model_name)?;
+
+    // Get or init sidecar manager
+    let manager = {
+        let mut global_manager = SIDECAR_MANAGER.lock().await;
+        if global_manager.is_none() {
+            let new_manager = SidecarManager::new(app_data_dir.clone())?;
+            *global_manager = Some(Arc::new(new_manager));
+        }
+        global_manager.clone().unwrap()
+    };
+
+    // Start sidecar with the model (this loads the model into memory)
+    manager.ensure_running(model_path).await?;
+
+    // Send a tiny warmup request to fully initialize inference
+    let model_def = models::get_model_by_name(model_name)
+        .ok_or_else(|| anyhow!("Unknown model: {}", model_name))?;
+    let prompt = models::format_prompt(&model_def.template, "You are helpful.", "Hi")?;
+
+    let request = Request::Generate {
+        prompt,
+        max_tokens: Some(5),
+        context_size: Some(512),
+        model_path: None,
+        temperature: Some(0.1),
+        top_k: Some(1),
+        top_p: Some(0.1),
+        stop_tokens: Some(model_def.sampling.stop_tokens.clone()),
+    };
+
+    let request_json = serde_json::to_string(&request)?;
+    let timeout = Duration::from_secs(120);
+    let _ = manager.send_request(request_json, timeout).await;
+
+    log::info!("Model warmup complete: {}", model_name);
+    Ok(())
+}
+
 /// Get cached model path with read-through caching to avoid repeated filesystem I/O
 fn get_cached_model_path(app_data_dir: &PathBuf, model_name: &str) -> Result<PathBuf> {
     // Try read lock first (fast path for cache hits)
@@ -174,10 +218,10 @@ pub async fn generate_with_builtin(
         }
     }
 
-    // Prepare generation request with model-specific sampling parameters
+    // Prepare generation request with model-specific parameters
     let request = Request::Generate {
         prompt: formatted_prompt,
-        max_tokens: Some(models::DEFAULT_MAX_TOKENS),
+        max_tokens: Some(model_def.max_tokens),
         context_size: Some(model_def.context_size),
         model_path: Some(model_path.to_string_lossy().to_string()),
         temperature: Some(model_def.sampling.temperature),
@@ -228,12 +272,28 @@ pub async fn generate_with_builtin(
             if let Some(err_msg) = error {
                 Err(anyhow!("Generation failed: {}", err_msg))
             } else {
-                log::info!("Generation completed: {} chars", text.len());
-                Ok(text)
+                let cleaned = strip_thinking_tokens(&text);
+                log::info!("Generation completed: {} chars (raw: {} chars)", cleaned.len(), text.len());
+                Ok(cleaned)
             }
         }
         Response::Error { message } => Err(anyhow!("Sidecar error: {}", message)),
     }
+}
+
+/// Strip chain-of-thought `<think>...</think>` blocks from model output.
+/// Qwen 3.5 and similar models wrap their reasoning in these tags.
+fn strip_thinking_tokens(text: &str) -> String {
+    // If the output contains </think>, everything after it is the actual answer
+    if let Some(pos) = text.find("</think>") {
+        let after = &text[pos + "</think>".len()..];
+        let trimmed = after.trim();
+        if !trimmed.is_empty() {
+            return trimmed.to_string();
+        }
+    }
+    // No thinking tokens found or nothing after them — return as-is
+    text.trim().to_string()
 }
 
 /// Shutdown the global sidecar (graceful cleanup)

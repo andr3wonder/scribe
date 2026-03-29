@@ -31,7 +31,7 @@ import { cn, isOllamaNotInstalledError } from '@/lib/utils';
 import { toast } from 'sonner';
 
 export interface ModelConfig {
-  provider: 'ollama' | 'groq' | 'claude' | 'openai' | 'openrouter' | 'builtin-ai' | 'custom-openai';
+  provider: 'ollama' | 'groq' | 'claude' | 'openai' | 'openrouter' | 'builtin-ai' | 'custom-openai' | 'claude-cli';
   model: string;
   whisperModel: string;
   apiKey?: string | null;
@@ -228,7 +228,8 @@ export function ModelSettingsModal({
     openai: openaiModels.length > 0 ? openaiModels : OPENAI_FALLBACK_MODELS,
     openrouter: openRouterModels.map((m) => m.id),
     'builtin-ai': builtinAiModels.map((m) => m.name),
-    'custom-openai': customOpenAIModel ? [customOpenAIModel] : [], // User specifies model manually
+    'custom-openai': customOpenAIModel ? [customOpenAIModel] : [],
+    'claude-cli': ['claude-cli'], // Uses claude -p, no model selection needed
   };
 
   const requiresApiKey =
@@ -851,6 +852,11 @@ export function ModelSettingsModal({
                   loadBuiltinAiModels();
                 }
 
+                // Auto-set model for Claude CLI
+                if (provider === 'claude-cli') {
+                  setModelConfig((prev) => ({ ...prev, model: 'claude-cli' }));
+                }
+
                 // Load custom OpenAI config when selected
                 if (provider === 'custom-openai') {
                   invoke<any>('api_get_custom_openai_config').then((config) => {
@@ -872,8 +878,9 @@ export function ModelSettingsModal({
                 <SelectValue placeholder="Select provider" />
               </SelectTrigger>
               <SelectContent className="max-h-64 overflow-y-auto">
+                <SelectItem value="claude-cli">Claude CLI (uses claude -p, no API key)</SelectItem>
                 <SelectItem value="builtin-ai">Built-in AI (Offline, No API needed)</SelectItem>
-                <SelectItem value="claude">Claude</SelectItem>
+                <SelectItem value="claude">Claude API</SelectItem>
                 <SelectItem value="custom-openai">Custom Server (OpenAI)</SelectItem>
                 <SelectItem value="groq">Groq</SelectItem>
                 <SelectItem value="ollama">Ollama</SelectItem>
@@ -882,7 +889,7 @@ export function ModelSettingsModal({
               </SelectContent>
             </Select>
 
-            {modelConfig.provider !== 'builtin-ai' && modelConfig.provider !== 'custom-openai' && (
+            {modelConfig.provider !== 'builtin-ai' && modelConfig.provider !== 'custom-openai' && modelConfig.provider !== 'claude-cli' && (
               <Popover open={modelComboboxOpen} onOpenChange={setModelComboboxOpen} modal={true}>
                 <PopoverTrigger asChild>
                   <Button

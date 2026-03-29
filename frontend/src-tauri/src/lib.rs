@@ -38,6 +38,8 @@ pub(crate) use perf_trace;
 pub mod analytics;
 pub mod api;
 pub mod audio;
+pub mod chat;
+pub mod claude_cli;
 pub mod config;
 pub mod console_utils;
 pub mod database;
@@ -49,6 +51,7 @@ pub mod anthropic;
 pub mod groq;
 pub mod openrouter;
 pub mod parakeet_engine;
+pub mod search;
 pub mod state;
 pub mod summary;
 pub mod tray;
@@ -458,12 +461,29 @@ pub fn run() {
 
             // Initialize ModelManager for summary engine (async, non-blocking)
             let app_handle_for_model_manager = _app.handle().clone();
+            let app_handle_for_warmup = _app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 match summary::summary_engine::commands::init_model_manager_at_startup(&app_handle_for_model_manager).await {
                     Ok(_) => log::info!("ModelManager initialized successfully at startup"),
                     Err(e) => {
                         log::warn!("Failed to initialize ModelManager at startup: {}", e);
                         log::warn!("ModelManager will be lazy-initialized on first use");
+                    }
+                }
+            });
+
+            // Preload the recommended LLM model so first request is fast
+            tauri::async_runtime::spawn(async move {
+                if let Ok(app_data_dir) = app_handle_for_warmup.path().app_data_dir() {
+                    // Get recommended model
+                    let model_name = match summary::summary_engine::commands::builtin_ai_get_recommended_model().await {
+                        Ok(name) => name,
+                        Err(_) => "gemma3:4b".to_string(),
+                    };
+                    log::info!("Preloading LLM model: {}", model_name);
+                    match summary::summary_engine::client::warmup_model(&app_data_dir, &model_name).await {
+                        Ok(_) => log::info!("LLM model preloaded successfully: {}", model_name),
+                        Err(e) => log::warn!("LLM model preload failed (will load on first use): {}", e),
                     }
                 }
             });
@@ -635,6 +655,10 @@ pub fn run() {
             summary::api_get_summary,
             summary::api_save_meeting_summary,
             summary::api_cancel_summary,
+            // Chat Q&A commands
+            chat::ask_meeting_question,
+            chat::get_chat_history,
+            chat::ask_global_question,
             // Template commands
             summary::api_list_templates,
             summary::api_get_template_details,
