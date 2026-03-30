@@ -298,16 +298,26 @@ export function useRecordingStop(
           try {
             const fullTranscript = freshTranscripts.map(t => t.text).join('\n');
             if (fullTranscript.trim().length > 10) {
-              console.log('🤖 Auto-generating summary with', modelConfig.provider, modelConfig.model);
-              toast.info('Generating summary...', {
-                description: `Using ${modelConfig.provider}/${modelConfig.model}`,
-                duration: 5000,
-              });
-              // Fire and forget — invoke returns process_id immediately, summary runs in background
+              // Fetch fresh model config from DB to avoid stale state
+              let provider = modelConfig.provider;
+              let model = modelConfig.model;
+              try {
+                const freshConfig = await invoke<any>('api_get_model_config');
+                if (freshConfig?.provider) {
+                  provider = freshConfig.provider;
+                  model = freshConfig.model || provider;
+                  console.log('🤖 Auto-summary using fresh config:', provider, model);
+                }
+              } catch {
+                console.log('🤖 Auto-summary using cached config:', provider, model);
+              }
+
+              toast.info('Generating summary...', { duration: 5000 });
+
               invoke('api_process_transcript', {
                 text: fullTranscript,
-                model: modelConfig.provider,
-                modelName: modelConfig.model,
+                model: provider,
+                modelName: model,
                 meetingId,
                 chunkSize: 40000,
                 overlap: 1000,
@@ -315,7 +325,6 @@ export function useRecordingStop(
                 templateId: 'standard_meeting',
               }).then((result: any) => {
                 console.log('✅ Auto-summary started, process_id:', result?.process_id);
-                // Summary is generating in background — the meeting detail page will poll for status
               }).catch((err: unknown) => {
                 console.warn('Auto-summary failed:', err);
                 toast.error('Summary generation failed', {
