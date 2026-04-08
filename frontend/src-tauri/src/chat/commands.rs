@@ -1,5 +1,6 @@
 use crate::chat::service::{self, LlmConfig};
 use crate::database::repositories::chat_message::ChatMessageRow;
+use crate::rag::commands::RagManagedState;
 use crate::state::AppState;
 use log::info as log_info;
 use serde::{Deserialize, Serialize};
@@ -101,6 +102,8 @@ pub async fn get_chat_history<R: Runtime>(
 }
 
 /// Ask a question across all meetings (global Q&A).
+/// Uses RAG hybrid search when the embedding model is available, otherwise falls
+/// back to the original two-LLM-call approach.
 #[tauri::command]
 pub async fn ask_global_question<R: Runtime>(
     app: AppHandle<R>,
@@ -122,7 +125,11 @@ pub async fn ask_global_question<R: Runtime>(
     let config =
         LlmConfig::from_db(pool, &model_provider, &model_name, app_data_dir).await?;
 
-    let answer = service::ask_global(pool, &question, &config).await?;
+    // Try to get RAG state — it's optional (may not be initialized yet)
+    let rag_state = app.try_state::<RagManagedState>();
+    let rag_lock = rag_state.as_ref().map(|s| &s.0 as &tokio::sync::RwLock<_>);
+
+    let answer = service::ask_global(pool, &question, &config, rag_lock).await?;
 
     Ok(ChatResponse {
         answer,

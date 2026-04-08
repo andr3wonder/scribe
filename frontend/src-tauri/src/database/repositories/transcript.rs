@@ -120,6 +120,44 @@ impl TranscriptsRepository {
         Ok(results)
     }
 
+    /// Search transcripts using FTS5 on RAG chunks (if the rag_chunks_fts table is indexed).
+    /// Falls back gracefully if the table is empty or not yet populated.
+    pub async fn search_transcripts_fts(
+        pool: &SqlitePool,
+        query: &str,
+        limit: usize,
+    ) -> Result<Vec<TranscriptSearchResult>, SqlxError> {
+        if query.trim().is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let results = sqlx::query_as::<_, (String, String, String, String)>(
+            "SELECT rc.meeting_id, m.title, rc.content, m.created_at \
+             FROM rag_chunks_fts f \
+             JOIN rag_chunks rc ON f.chunk_id = rc.id \
+             JOIN meetings m ON rc.meeting_id = m.id \
+             WHERE rag_chunks_fts MATCH ?1 \
+             ORDER BY rank \
+             LIMIT ?2",
+        )
+        .bind(query)
+        .bind(limit as i64)
+        .fetch_all(pool)
+        .await?;
+
+        let mapped = results
+            .into_iter()
+            .map(|(id, title, content, timestamp)| TranscriptSearchResult {
+                id,
+                title,
+                match_context: content,
+                timestamp,
+            })
+            .collect();
+
+        Ok(mapped)
+    }
+
     /// Helper function to extract a snippet of text around the first match of a query.
     fn get_match_context(transcript: &str, query: &str) -> String {
         let transcript_lower = transcript.to_lowercase();

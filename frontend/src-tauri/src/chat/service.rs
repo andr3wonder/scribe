@@ -370,21 +370,92 @@ pub async fn get_chat_history(
 
 /// Ask a question across all meetings (global chat).
 ///
-/// 1. Fetches all meetings with summaries
-/// 2. Asks LLM which meetings are relevant (by summary)
-/// 3. Fetches transcripts for relevant meetings
-/// 4. Asks LLM the actual question with that context
-/// 5. Returns the response
+/// Uses RAG (hybrid semantic + keyword search) when available, falling back to
+/// the original two-LLM-call approach (selection + answer) when no RAG state is provided.
 pub async fn ask_global(
     pool: &SqlitePool,
     question: &str,
     config: &LlmConfig,
+    rag_state: Option<&tokio::sync::RwLock<crate::rag::commands::RagState>>,
 ) -> Result<String, String> {
     info!(
         "ask_global called, question={}",
         &question[..question.len().min(80)]
     );
 
+    // ── RAG path: hybrid semantic + keyword search ──────────────────────────
+    if let Some(state) = rag_state {
+        let state_guard = state.read().await;
+
+        // Use hybrid search (vector + FTS5) when engine is available, FTS5-only otherwise
+        let results = if let Some(engine) = &state_guard.engine {
+            match engine.embed(question) {
+                Ok(query_embedding) => {
+                    match crate::rag::search::hybrid_search(
+                        pool,
+                        &state_guard.index,
+                        &query_embedding,
+                        question,
+                        10,
+                    )
+                    .await
+                    {
+                        Ok(r) => r,
+                        Err(e) => {
+                            warn!("RAG hybrid search failed, falling back: {}", e);
+                            Vec::new()
+                        }
+                    }
+                }
+                Err(e) => {
+                    warn!("RAG embedding failed, trying FTS5 only: {}", e);
+                    crate::rag::search::fts_only_search(pool, question, 10)
+                        .await
+                        .unwrap_or_default()
+                }
+            }
+        } else {
+            // No embedding engine — try FTS5 only
+            crate::rag::search::fts_only_search(pool, question, 10)
+                .await
+                .unwrap_or_default()
+        };
+
+        // Drop the read guard before making LLM calls
+        drop(state_guard);
+
+        if !results.is_empty() {
+            // Build context from search results
+            let mut context = String::new();
+            for result in &results {
+                context.push_str(&format!(
+                    "\n--- From: {} (relevance: {:.2}) ---\n{}\n",
+                    result.meeting_title, result.score, result.content
+                ));
+            }
+
+            let system_prompt = format!(
+                "You are a helpful meeting assistant. Answer the user's question based on the following meeting excerpts. \
+                 Reference which meeting the information comes from when relevant. \
+                 If the excerpts don't contain enough information, say so.\n\n{}",
+                context
+            );
+
+            let (enriched_question, search_used) =
+                web_search::enrich_prompt_if_needed(question, question).await;
+            if search_used {
+                info!("Web search used for RAG global chat question");
+            }
+
+            let response = call_llm(config, &system_prompt, &enriched_question).await?;
+            info!("RAG global chat completed, response length={}", response.len());
+            return Ok(response);
+        }
+        // If RAG returned no results, fall through to the original approach
+        info!("RAG search returned no results, falling back to original global chat");
+    }
+
+    // ── Original path: two LLM calls (selection + answer) ───────────────────
     // 1. Fetch all meetings with summaries
     let meetings_with_summaries = ChatMessagesRepository::get_meetings_with_summaries(pool)
         .await

@@ -134,6 +134,9 @@ urlencoding = "2.1"
 ndarray = "0.16"
 bytes = { version = "1.9.0", features = ["serde"] }
 
+# RAG: tokenizer for embedding model
+tokenizers = { version = "0.21", default-features = false, features = ["onig"] }
+
 esaxx-rs = "0.1.10"
 symphonia = { version = "0.5.4", features = ["aac", "isomp4", "mp3", "flac", "ogg", "vorbis", "pcm", "wav", "opt-simd"] }
 rand = "0.8.5"

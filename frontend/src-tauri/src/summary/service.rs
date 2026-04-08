@@ -8,7 +8,7 @@ use sqlx::SqlitePool;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 use once_cell::sync::Lazy;
@@ -334,6 +334,45 @@ impl SummaryService {
                         "Summary saved successfully for meeting_id: {}",
                         meeting_id
                     );
+
+                    // Trigger RAG indexing for this meeting in the background.
+                    // We emit a Tauri event so the frontend (or a listener) can call
+                    // rag_index_meeting. This avoids needing to thread RagState through
+                    // the summary service.
+                    if let Err(e) = _app.emit("rag-index-needed", &meeting_id) {
+                        warn!("Failed to emit rag-index-needed event: {}", e);
+                    } else {
+                        info!("Emitted rag-index-needed event for meeting_id: {}", meeting_id);
+                    }
+
+                    // Trigger structured extraction in background
+                    let pool_for_extraction = pool.clone();
+                    let meeting_id_for_extraction = meeting_id.clone();
+                    tokio::spawn(async move {
+                        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                        match crate::extraction::extractor::extract_from_meeting_auto(
+                            &pool_for_extraction,
+                            &meeting_id_for_extraction,
+                        )
+                        .await
+                        {
+                            Ok(result) => {
+                                info!(
+                                    "Extracted {} decisions, {} action items, {} topics from meeting {}",
+                                    result.decisions.len(),
+                                    result.action_items.len(),
+                                    result.topics.len(),
+                                    meeting_id_for_extraction
+                                );
+                            }
+                            Err(e) => {
+                                warn!(
+                                    "Failed to extract entities from meeting {}: {}",
+                                    meeting_id_for_extraction, e
+                                );
+                            }
+                        }
+                    });
                 }
             }
             Err(e) => {

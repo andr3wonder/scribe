@@ -43,6 +43,7 @@ pub mod claude_cli;
 pub mod config;
 pub mod console_utils;
 pub mod database;
+pub mod extraction;
 pub mod notifications;
 pub mod ollama;
 pub mod onboarding;
@@ -51,6 +52,8 @@ pub mod anthropic;
 pub mod groq;
 pub mod openrouter;
 pub mod parakeet_engine;
+pub mod people;
+pub mod rag;
 pub mod search;
 pub mod state;
 pub mod summary;
@@ -499,6 +502,54 @@ pub fn run() {
             })
             .expect("Failed to initialize database");
 
+            // Initialize RAG state
+            let rag_state = rag::commands::RagManagedState(Arc::new(tokio::sync::RwLock::new(
+                rag::commands::RagState {
+                    engine: None,
+                    index: rag::vector_index::VectorIndex::new(),
+                },
+            )));
+            _app.manage(rag_state);
+
+            // Try to load embedding model and vector index in background
+            let app_handle_for_rag = _app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let app_data_dir = app_handle_for_rag.path().app_data_dir().unwrap();
+                let rag_state = app_handle_for_rag.state::<rag::commands::RagManagedState>();
+
+                // Try to load embedding model if available
+                if rag::model_manager::EmbeddingModelManager::is_model_ready(&app_data_dir) {
+                    let model_dir = rag::model_manager::EmbeddingModelManager::model_dir(&app_data_dir);
+                    match rag::embeddings::EmbeddingEngine::new(&model_dir) {
+                        Ok(engine) => {
+                            log::info!("RAG embedding model loaded successfully");
+                            let mut state = rag_state.0.write().await;
+                            state.engine = Some(engine);
+                        }
+                        Err(e) => {
+                            log::warn!("Failed to load RAG embedding model: {}", e);
+                        }
+                    }
+                }
+
+                // Load vector index from database
+                if let Some(app_state) = app_handle_for_rag.try_state::<state::AppState>() {
+                    let pool = app_state.db_manager.pool();
+                    match rag::vector_index::VectorIndex::load_from_db(pool).await {
+                        Ok(index) => {
+                            log::info!("RAG vector index loaded: {} vectors", index.len());
+                            let mut state = rag_state.0.write().await;
+                            state.index = index;
+                        }
+                        Err(e) => {
+                            log::warn!("Failed to load RAG vector index: {}", e);
+                        }
+                    }
+                } else {
+                    log::warn!("AppState not available for RAG vector index loading");
+                }
+            });
+
             // Start system audio monitoring (detect when Zoom/Teams/etc use audio)
             let app_handle_for_audio_monitor = _app.handle().clone();
             tauri::async_runtime::spawn(async move {
@@ -663,6 +714,21 @@ pub fn run() {
             chat::ask_meeting_question,
             chat::get_chat_history,
             chat::ask_global_question,
+            // Extraction commands
+            extraction::extract_meeting_entities,
+            extraction::extract_all_meetings,
+            extraction::get_meeting_decisions,
+            extraction::get_meeting_action_items,
+            extraction::get_open_questions,
+            extraction::update_action_item_status,
+            extraction::get_extraction_status,
+            // RAG commands
+            rag::commands::rag_search,
+            rag::commands::rag_index_meeting,
+            rag::commands::rag_index_all,
+            rag::commands::rag_get_index_status,
+            rag::commands::rag_download_model,
+            rag::commands::rag_is_model_ready,
             // Template commands
             summary::api_list_templates,
             summary::api_get_template_details,
@@ -744,6 +810,14 @@ pub fn run() {
             audio::import::start_import_audio_command,
             audio::import::cancel_import_command,
             audio::import::is_import_in_progress_command,
+            // People intelligence commands
+            people::get_person_profile,
+            people::list_people,
+            people::get_commitments_for_person,
+            people::get_expertise_map,
+            people::prepare_for_meeting,
+            people::get_meeting_participants_cmd,
+            people::merge_people_cmd,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
