@@ -1,36 +1,110 @@
 use tauri::{command, AppHandle, Emitter, Manager, State};
 use crate::audio::{
     start_system_audio_capture, list_system_audio_devices, check_system_audio_permissions,
-    SystemAudioDetector, SystemAudioEvent, new_system_audio_callback
+    SystemAudioDetector, SystemAudioEvent, new_system_audio_callback,
+    meeting_apps,
 };
+use crate::notifications::commands::NotificationManagerState;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+use serde::Serialize;
 use anyhow::Result;
 
 // Global state for system audio detector
 type SystemAudioDetectorState = Arc<Mutex<Option<SystemAudioDetector>>>;
 
+/// Minimum gap between meeting-start notifications for the same app. Prevents
+/// noise when audio briefly stops/starts (e.g., user mutes, screen share swap).
+const NOTIFY_COOLDOWN: Duration = Duration::from_secs(120);
+
+#[derive(Debug, Clone, Serialize)]
+struct MeetingStartingPayload {
+    app_name: String,
+    all_apps: Vec<String>,
+}
+
 /// Start system audio monitoring without requiring Tauri State (for startup use)
 pub async fn start_system_audio_monitoring_internal(app_handle: AppHandle) -> Result<(), String> {
     let mut detector = SystemAudioDetector::new();
+
+    // Shared cooldown state across callback invocations. Key: last-notified app name.
+    let last_notify: Arc<Mutex<Option<(String, Instant)>>> = Arc::new(Mutex::new(None));
 
     let callback = new_system_audio_callback(move |event| {
         match event {
             SystemAudioEvent::SystemAudioStarted(apps) => {
                 tracing::info!("System audio started by apps: {:?}", apps);
+                // Always emit the raw event — existing frontend listeners rely on it.
                 let _ = app_handle.emit("system-audio-started", apps.clone());
 
-                // Send system notification
-                let body = if apps.is_empty() {
-                    "Click to start transcribing".to_string()
-                } else {
-                    format!("{} — Click to start transcribing", apps.join(", "))
+                // Only surface a user-facing notification if a real meeting app
+                // is producing audio. This filters out Spotify, YouTube, etc.
+                let meeting_app = match meeting_apps::find_meeting_app(&apps) {
+                    Some(a) => a,
+                    None => {
+                        tracing::debug!("No meeting app in audio list; skipping notification");
+                        return;
+                    }
                 };
-                use tauri_plugin_notification::NotificationExt;
-                let _ = app_handle.notification()
-                    .builder()
-                    .title("Meeting detected")
-                    .body(&body)
-                    .show();
+
+                // Cooldown: don't re-notify the same app within NOTIFY_COOLDOWN.
+                if let Ok(mut guard) = last_notify.lock() {
+                    if let Some((prev_app, when)) = guard.as_ref() {
+                        if prev_app == &meeting_app && when.elapsed() < NOTIFY_COOLDOWN {
+                            tracing::debug!(
+                                "Suppressing duplicate meeting-start notification for {} (cooldown)",
+                                meeting_app
+                            );
+                            return;
+                        }
+                    }
+                    *guard = Some((meeting_app.clone(), Instant::now()));
+                }
+
+                let payload = MeetingStartingPayload {
+                    app_name: meeting_app.clone(),
+                    all_apps: apps.clone(),
+                };
+                let _ = app_handle.emit("meeting-starting-prompt", &payload);
+
+                // Fire the notification via NotificationManager so user settings /
+                // DND are respected. Reuses the existing `show_meeting_reminder`
+                // plumbing (settings.show_meeting_reminders, reminder_minutes list).
+                //
+                // Callback runs on a CoreAudio native thread — we hop onto the tokio
+                // runtime to reach the async NotificationManager.
+                let app_for_notify = app_handle.clone();
+                let app_name_for_notify = meeting_app.clone();
+                tauri::async_runtime::spawn(async move {
+                    let state = app_for_notify.state::<NotificationManagerState<tauri::Wry>>();
+                    let guard = state.read().await;
+                    if let Some(mgr) = guard.as_ref() {
+                        // Use "0 minutes until" to mean "happening now". 0 must be
+                        // in meeting_reminder_minutes for the notification to fire;
+                        // see defaults in notifications/settings.rs.
+                        let title = format!("{} meeting started", app_name_for_notify);
+                        if let Err(e) = mgr
+                            .show_meeting_reminder(0, Some(title))
+                            .await
+                        {
+                            tracing::error!("show_meeting_reminder failed: {}", e);
+                        }
+                    } else {
+                        tracing::warn!(
+                            "NotificationManager not ready; falling back to raw notification"
+                        );
+                        use tauri_plugin_notification::NotificationExt;
+                        let _ = app_for_notify
+                            .notification()
+                            .builder()
+                            .title("Meeting started")
+                            .body(&format!(
+                                "{} is running — open Scribe to record",
+                                app_name_for_notify
+                            ))
+                            .show();
+                    }
+                });
             }
             SystemAudioEvent::SystemAudioStopped => {
                 let _ = app_handle.emit("system-audio-stopped", ());

@@ -166,12 +166,14 @@ impl Notification {
     }
 
     pub fn meeting_reminder(minutes_until: u64, meeting_title: Option<String>) -> Self {
-        let body = match meeting_title {
-            Some(title) => format!("Meeting '{}' starts in {} minutes", title, minutes_until),
-            None => format!("Meeting starts in {} minutes", minutes_until),
+        let body = match (minutes_until, meeting_title) {
+            (0, Some(title)) => format!("{} — click Scribe to start recording", title),
+            (0, None) => "A meeting just started — click Scribe to start recording".to_string(),
+            (m, Some(title)) => format!("Meeting '{}' starts in {} minutes", title, m),
+            (m, None) => format!("Meeting starts in {} minutes", m),
         };
 
-        Notification::new("Meetily", body, NotificationType::MeetingReminder(minutes_until))
+        Notification::new("Scribe", body, NotificationType::MeetingReminder(minutes_until))
             .with_priority(NotificationPriority::High)
             .with_timeout(NotificationTimeout::Seconds(10))
     }

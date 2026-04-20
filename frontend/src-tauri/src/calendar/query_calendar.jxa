@@ -1,0 +1,65 @@
+// Query macOS Calendar.app for events starting within the next N seconds.
+// Usage: osascript -l JavaScript query_calendar.jxa <lookahead_seconds>
+// Output: JSON array of events to stdout. Empty array if nothing upcoming.
+//
+// Each event: { uid, title, start_ms, end_ms, location, url, notes_snippet }
+
+(function () {
+  var argv = $.NSProcessInfo.processInfo.arguments;
+  var lookaheadSeconds = 120;
+  if (argv.count > 4) {
+    var parsed = parseInt(ObjC.unwrap(argv.objectAtIndex(4)), 10);
+    if (!isNaN(parsed) && parsed > 0) lookaheadSeconds = parsed;
+  }
+
+  var Calendar = Application("Calendar");
+  var now = new Date();
+  var windowEnd = new Date(now.getTime() + lookaheadSeconds * 1000);
+
+  var out = [];
+
+  try {
+    var cals = Calendar.calendars();
+    for (var i = 0; i < cals.length; i++) {
+      var cal;
+      try { cal = cals[i]; } catch (e) { continue; }
+
+      var events;
+      try {
+        // whose() is the fast, indexed path — filters server-side instead of enumerating every event
+        events = cal.events.whose({
+          _and: [
+            { startDate: { _greaterThanEquals: now } },
+            { startDate: { _lessThan: windowEnd } }
+          ]
+        })();
+      } catch (e) {
+        continue;
+      }
+
+      for (var j = 0; j < events.length; j++) {
+        var ev = events[j];
+        try {
+          var start = ev.startDate();
+          var end = ev.endDate();
+          var notes = "";
+          try { notes = (ev.description() || "").toString().slice(0, 2000); } catch (_) {}
+          out.push({
+            uid: ev.uid(),
+            title: (ev.summary() || "").toString(),
+            start_ms: start.getTime(),
+            end_ms: end.getTime(),
+            location: (ev.location() || "").toString(),
+            url: (ev.url() || "").toString(),
+            notes_snippet: notes
+          });
+        } catch (e) { /* skip bad event */ }
+      }
+    }
+  } catch (e) {
+    // Return error as JSON so Rust side can log it
+    return JSON.stringify({ __error: String(e) });
+  }
+
+  return JSON.stringify(out);
+})();

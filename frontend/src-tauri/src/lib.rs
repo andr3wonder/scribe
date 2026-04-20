@@ -38,6 +38,7 @@ pub(crate) use perf_trace;
 pub mod analytics;
 pub mod api;
 pub mod audio;
+pub mod calendar;
 pub mod chat;
 pub mod claude_cli;
 pub mod config;
@@ -446,6 +447,9 @@ pub fn run() {
                     }
                 }
             });
+
+            // (calendar monitor is available at `calendar::monitor::spawn` but not
+            //  auto-started — meeting detection happens via system audio instead.)
 
             // Set models directory to use app_data_dir (unified storage location)
             whisper_engine::commands::set_models_directory(&_app.handle());

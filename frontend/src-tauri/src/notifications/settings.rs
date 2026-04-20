@@ -88,7 +88,7 @@ impl Default for NotificationPreferences {
             show_transcription_complete: true,
             show_meeting_reminders: true,
             show_system_errors: true,
-            meeting_reminder_minutes: vec![15, 5], // 15 minutes and 5 minutes before
+            meeting_reminder_minutes: vec![15, 5, 1, 0], // 0 = "meeting just started now" (used by system-audio detection)
         }
     }
 }
