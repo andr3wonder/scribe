@@ -1,6 +1,13 @@
 name: "Build and Test - macOS"
 
 on:
+  # Scoped push trigger so this fork's first run registers the workflow_dispatch
+  # entry (GitHub only discovers dispatch-only workflows after the file appears
+  # on the default branch AND something references it). Limited to one branch
+  # so random pushes don't burn CI minutes.
+  push:
+    branches:
+      - feat/calendar-reminders
   workflow_dispatch:
     inputs:
       build-type:
@@ -239,7 +246,7 @@ jobs:
           fi
 
       - name: Upload artifacts
-        if: ${{ github.event.inputs.upload-artifacts == 'true' }}
+        if: ${{ github.event.inputs.upload-artifacts == 'true' || github.event_name == 'push' }}
         uses: actions/upload-artifact@v4
         with:
           name: meetily-macos-aarch64-${{ steps.build-profile.outputs.profile }}-${{ steps.get-version.outputs.version }}
