@@ -246,7 +246,7 @@ jobs:
           fi
 
       - name: Upload artifacts
-        if: ${{ github.event.inputs.upload-artifacts == 'true' || github.event_name == 'push' }}
+        if: ${{ always() && (github.event.inputs.upload-artifacts == 'true' || github.event_name == 'push') }}
         uses: actions/upload-artifact@v4
         with:
           name: meetily-macos-aarch64-${{ steps.build-profile.outputs.profile }}-${{ steps.get-version.outputs.version }}
