@@ -20,7 +20,7 @@ use serde::Serialize;
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
-use tauri::{AppHandle, Emitter, Runtime};
+use tauri::{AppHandle, Emitter, Manager, Runtime};
 use tokio::sync::Mutex;
 use tokio::time::{interval, MissedTickBehavior};
 
