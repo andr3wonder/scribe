@@ -41,7 +41,7 @@ env:
 jobs:
   build-macos:
     name: Build macOS (Apple Silicon)
-    runs-on: macos-26-arm64  # pinned to macOS 26 SDK — macos-latest is still 15, which produces binaries that crash tao on 26.x hosts
+    runs-on: macos-26  # pinned to macOS 26 SDK — macos-26-arm64 queues 50+ min, plain macos-26 (x86) can cross-compile to arm64 with matching SDK
     permissions:
       contents: write
 
