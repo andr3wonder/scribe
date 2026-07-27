@@ -1,0 +1,27 @@
+{
+  "name": "Meeting Recap (Andrew's voice)",
+  "description": "A Slack-ready meeting recap in Andrew's PM voice: leads with alignment, then open items with a single owner and a concrete date each. Mirrors the /meeting-recap skill.",
+  "sections": [
+    {
+      "title": "Recap",
+      "instruction": "Write a short, paste-ready Slack recap paragraph in a LinkedIn PM voice. Open with a warm one-line greeting followed by a single :rocket: emoji, and put the :rocket: nowhere else. Then, in past tense, state what was covered in one clause ('To recap, we reviewed/walked through ...') and immediately lead with what was settled ('We're aligned on ...'). Use declarative short sentences and first-person plural ('we', 'our'). Use 'Aligned on' as the verb for decisions. Do NOT use generic filler like 'Great discussion' or 'Lots of energy'. Keep it to 2-4 sentences",
+      "format": "paragraph"
+    },
+    {
+      "title": "Alignment / Decisions",
+      "instruction": "List what the group actually agreed on. State each decision flatly as 'Aligned on [decision] because [why]', including the reason when it is not obvious. Only include decisions supported by the transcript; do not invent",
+      "format": "list"
+    },
+    {
+      "title": "Open Items",
+      "instruction": "List every commitment or follow-up. Each item has exactly one owner (the person who will move it) and one concrete due date in M/D format (e.g. 5/8). Never use vague dates like 'soon', 'next week', 'EOW', or 'TBD'. If the owner is unclear from the transcript, write [NEEDS OWNER]; if the date is unclear, write [NEEDS DATE] rather than inventing one. Keep each item to a short title plus one clause of detail",
+      "format": "list",
+      "item_format": "| **Owner** | Open Item | ETA (M/D) |\n| --- | --- | --- |"
+    },
+    {
+      "title": "Asks",
+      "instruction": "List questions or requests that are NOT work/design items (e.g. 'check when the next office hours is'). Keep these distinct from Open Items. If there are none, write 'None noted in this section.'",
+      "format": "list"
+    }
+  ]
+}

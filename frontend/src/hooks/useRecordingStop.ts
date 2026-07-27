@@ -312,7 +312,7 @@ export function useRecordingStop(
                 chunkSize: 40000,
                 overlap: 1000,
                 customPrompt: '',
-                templateId: 'standard_meeting',
+                templateId: 'meeting_recap',
               }).then((result: any) => {
                 console.log('✅ Auto-summary started, process_id:', result?.process_id);
                 // Summary is generating in background — the meeting detail page will poll for status
