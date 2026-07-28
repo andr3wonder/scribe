@@ -1,0 +1,27 @@
+{
+  "name": "Meeting Recap (Andrew's voice)",
+  "description": "A concise, detailed meeting recap that leads with discussion highlights, then captures decisions, open items, and asks.",
+  "sections": [
+    {
+      "title": "Discussion Highlights",
+      "instruction": "Lead with 3-5 bullets covering the most important topics discussed, ordered by importance. Each bullet should state the topic, the key takeaway, and why it matters or what changed. Include concrete details, tradeoffs, or unresolved tension when supported by the transcript. Keep each bullet to 35 words or fewer. Be concise but specific; do not repeat points that appear in later sections, narrate the meeting chronologically, or use filler such as 'Great discussion'.",
+      "format": "list"
+    },
+    {
+      "title": "Alignment / Decisions",
+      "instruction": "List only decisions the group actually made. State each one directly as 'Aligned on [decision] because [reason]' when the reason is supported by the transcript. Do not turn discussion points or proposals into decisions. If no decision was made, write 'No decisions recorded.'",
+      "format": "list"
+    },
+    {
+      "title": "Open Items",
+      "instruction": "List every commitment or follow-up. Give each item exactly one owner and one concrete due date in M/D format when stated. If the owner is unclear, write [NEEDS OWNER]; if the date is unclear, write [NEEDS DATE] rather than inventing one. Keep each item to a short title plus one clause of useful detail.",
+      "format": "list",
+      "item_format": "| **Owner** | Open Item | ETA (M/D) |\n| --- | --- | --- |"
+    },
+    {
+      "title": "Asks",
+      "instruction": "List explicit questions, requests, or dependencies that are not already captured as open items. Keep each ask to one concise sentence. If there are none, write 'None noted.'",
+      "format": "list"
+    }
+  ]
+}

@@ -9,6 +9,9 @@ pub const DAILY_STANDUP: &str = include_str!("../../../templates/daily_standup.j
 /// Standard meeting notes template
 pub const STANDARD_MEETING: &str = include_str!("../../../templates/standard_meeting.json");
 
+/// Meeting recap in Andrew's PM voice
+pub const MEETING_RECAP: &str = include_str!("../../../templates/meeting_recap.json");
+
 /// Registry of all built-in templates
 ///
 /// Maps template identifiers to their embedded JSON content
@@ -16,6 +19,7 @@ pub fn get_builtin_templates() -> Vec<(&'static str, &'static str)> {
     vec![
         ("daily_standup", DAILY_STANDUP),
         ("standard_meeting", STANDARD_MEETING),
+        ("meeting_recap", MEETING_RECAP),
     ]
 }
 
@@ -30,13 +34,14 @@ pub fn get_builtin_template(id: &str) -> Option<&'static str> {
     match id {
         "daily_standup" => Some(DAILY_STANDUP),
         "standard_meeting" => Some(STANDARD_MEETING),
+        "meeting_recap" => Some(MEETING_RECAP),
         _ => None,
     }
 }
 
 /// List all built-in template identifiers
 pub fn list_builtin_template_ids() -> Vec<&'static str> {
-    vec!["daily_standup", "standard_meeting"]
+    vec!["daily_standup", "standard_meeting", "meeting_recap"]
 }
 
 #[cfg(test)]
@@ -60,6 +65,7 @@ mod tests {
     fn test_get_builtin_template() {
         assert!(get_builtin_template("daily_standup").is_some());
         assert!(get_builtin_template("standard_meeting").is_some());
+        assert!(get_builtin_template("meeting_recap").is_some());
         assert!(get_builtin_template("nonexistent").is_none());
     }
 }

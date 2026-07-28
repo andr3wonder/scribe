@@ -90,7 +90,7 @@ export const ImportTranscriptDialog: React.FC<ImportTranscriptDialogProps> = ({
         chunkSize: 40000,
         overlap: 1000,
         customPrompt: '',
-        templateId: 'standard_meeting',
+        templateId: 'meeting_recap',
       }).catch((err: unknown) => {
         console.warn('Auto-summary for import failed:', err);
       });
