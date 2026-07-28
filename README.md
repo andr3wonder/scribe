@@ -8,7 +8,7 @@ Built on [Meetily](https://github.com/Zackriya-Solutions/meetily) (open-source m
 
 - **Record meetings** — captures mic + system audio (Zoom, Teams, Meet, etc.)
 - **Live transcription** — Whisper/Parakeet, GPU-accelerated, runs locally
-- **AI summaries** — auto-generated when recording stops (Qwen 3.5 4B on-device or Claude CLI)
+- **AI summaries** — auto-generated when recording stops (Qwen 3.5 9B on-device or Claude CLI)
 - **Chat Q&A** — ask questions about any meeting, grounded in the transcript
 - **Global search** — search and ask across all your meetings at once
 - **Meeting detection** — system notification when audio apps start, one-click to record
@@ -22,7 +22,7 @@ Built on [Meetily](https://github.com/Zackriya-Solutions/meetily) (open-source m
 | Provider | Setup | Best for |
 |----------|-------|----------|
 | **Claude CLI** | `claude` installed, no API key | Best quality, uses your existing Claude auth |
-| **Qwen 3.5 4B** | Downloads ~2.8GB model | Fully offline, chain-of-thought reasoning |
+| **Qwen 3.5 9B** | Downloads ~5.4GB model | Fully offline, higher-quality reasoning on 24GB+ Apple Silicon Macs |
 | **Gemma 3 4B** | Downloads ~2.4GB model | Fast offline fallback |
 | **Ollama** | Run `ollama serve` | Any Ollama model |
 | **Claude/OpenAI/Groq API** | API key in settings | Cloud providers |
@@ -72,6 +72,6 @@ python3 scripts/import_teams.py ~/Downloads/call-transcript--*.txt
 - Meeting auto-detection (system notifications)
 - Granola and Teams import scripts
 - Import Transcript UI
-- Qwen 3.5 4B as default on-device model
+- Qwen 3.5 9B as the recommended on-device model for 24GB+ Apple Silicon Macs
 - Stripped all branding/analytics/telemetry
 - Menu bar persistence (hide on close)

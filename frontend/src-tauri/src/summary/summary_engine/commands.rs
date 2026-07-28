@@ -313,6 +313,7 @@ pub async fn builtin_ai_get_available_summary_model<R: Runtime>(
         .filter(|m| matches!(m.status, crate::summary::summary_engine::model_manager::ModelStatus::Available))
         .max_by_key(|m| {
             match m.name.as_str() {
+                "qwen3.5:9b" => 4,
                 "qwen3.5:4b" => 3,
                 "gemma3:4b" => 2,
                 "gemma3:1b" => 1,
@@ -357,7 +358,8 @@ pub async fn init_model_manager_at_startup<R: Runtime>(
 
 
 /// Get recommended summary model based on platform and system RAM
-/// macOS + >16GB RAM → qwen3.5:4b (best quality, chain-of-thought)
+/// macOS + >=24GB RAM → qwen3.5:9b (best quality that fits comfortably)
+/// macOS + >16GB RAM → qwen3.5:4b (fast Qwen fallback)
 /// macOS + >8GB RAM → gemma3:4b (balanced)
 /// Otherwise → gemma3:1b (fast)
 #[tauri::command]
@@ -367,16 +369,22 @@ pub async fn builtin_ai_get_recommended_model() -> Result<String, String> {
 
     log::info!("System RAM detected: {} GB, Platform: {}", system_ram_gb, if is_macos { "macOS" } else { "other" });
 
-    let recommended = if is_macos && system_ram_gb > 16 {
-        "qwen3.5:4b"      // macOS + >16GB RAM: best quality with chain-of-thought
+    let recommended = recommended_model_for(is_macos, system_ram_gb);
+
+    log::info!("Recommended summary model: {} (macOS={}, {}GB RAM)", recommended, is_macos, system_ram_gb);
+    Ok(recommended.to_string())
+}
+
+fn recommended_model_for(is_macos: bool, system_ram_gb: u64) -> &'static str {
+    if is_macos && system_ram_gb >= 24 {
+        "qwen3.5:9b"      // macOS + 24GB: best quality with room for app and context cache
+    } else if is_macos && system_ram_gb > 16 {
+        "qwen3.5:4b"      // macOS + >16GB: fast Qwen fallback
     } else if is_macos && system_ram_gb > 8 {
         "gemma3:4b"        // macOS + >8GB RAM: balanced
     } else {
         "gemma3:1b"        // All other cases: fast
-    };
-
-    log::info!("Recommended summary model: {} (macOS={}, {}GB RAM)", recommended, is_macos, system_ram_gb);
-    Ok(recommended.to_string())
+    }
 }
 
 /// Get total system RAM in gigabytes
@@ -390,4 +398,20 @@ fn get_system_ram_gb() -> Result<u64, String> {
     let total_memory_gb = total_memory_bytes / (1024 * 1024 * 1024);
 
     Ok(total_memory_gb)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::recommended_model_for;
+
+    #[test]
+    fn recommends_qwen_9b_for_24gb_macos() {
+        assert_eq!(recommended_model_for(true, 24), "qwen3.5:9b");
+    }
+
+    #[test]
+    fn keeps_smaller_models_for_lower_memory_systems() {
+        assert_eq!(recommended_model_for(true, 16), "gemma3:4b");
+        assert_eq!(recommended_model_for(false, 64), "gemma3:1b");
+    }
 }

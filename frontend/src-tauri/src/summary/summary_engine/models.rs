@@ -105,10 +105,29 @@ pub fn get_available_models() -> Vec<ModelDef> {
             },
             description: "Balanced model. Great quality/speed trade-off. Requires ~3.5GB RAM.".to_string(),
         },
-        // Qwen 3.5 4B - Best quality with chain-of-thought reasoning
+        // Qwen 3.5 9B - Best quality for Apple Silicon Macs with 24GB+ unified memory
+        ModelDef {
+            name: "qwen3.5:9b".to_string(),
+            display_name: "Qwen 3.5 9B (Recommended for 24GB+ Macs)".to_string(),
+            gguf_file: "Qwen3.5-9B-Q4_K_M.gguf".to_string(),
+            template: "chatml".to_string(),
+            download_url: "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-Q4_K_M.gguf".to_string(),
+            size_mb: 5417,
+            context_size: 32768,
+            layer_count: 32,
+            max_tokens: 4096,
+            sampling: SamplingParams {
+                temperature: 0.7,
+                top_k: 40,
+                top_p: 0.9,
+                stop_tokens: vec!["<|im_end|>".to_string(), "<|endoftext|>".to_string(), "\n\n\n".to_string()],
+            },
+            description: "Highest-quality local model recommended for this Mac. Uses Metal GPU acceleration and requires about 8GB of unified memory while generating.".to_string(),
+        },
+        // Qwen 3.5 4B - Faster fallback with chain-of-thought reasoning
         ModelDef {
             name: "qwen3.5:4b".to_string(),
-            display_name: "Qwen 3.5 4B (Recommended)".to_string(),
+            display_name: "Qwen 3.5 4B (Fast)".to_string(),
             gguf_file: "Qwen3.5-4B-Q4_K_M.gguf".to_string(),
             template: "chatml".to_string(),
             download_url: "https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/resolve/main/Qwen3.5-4B-Q4_K_M.gguf".to_string(),
@@ -124,7 +143,7 @@ pub fn get_available_models() -> Vec<ModelDef> {
                 // llama-helper handles EOS internally. These are backup text-based stops.
                 stop_tokens: vec!["<|im_end|>".to_string(), "<|endoftext|>".to_string(), "\n\n\n".to_string()],
             },
-            description: "Best quality model. Chain-of-thought reasoning for detailed summaries and Q&A. Requires ~4GB RAM.".to_string(),
+            description: "Faster Qwen option. Good summaries and Q&A with lower memory use. Requires about 4GB RAM.".to_string(),
         },
     ]
 }
@@ -144,8 +163,8 @@ pub fn get_default_model() -> ModelDef {
 
 /// Resolve model name to full file path in the models directory
 pub fn get_model_path(app_data_dir: &PathBuf, model_name: &str) -> Result<PathBuf> {
-    let model = get_model_by_name(model_name)
-        .ok_or_else(|| anyhow!("Unknown model: {}", model_name))?;
+    let model =
+        get_model_by_name(model_name).ok_or_else(|| anyhow!("Unknown model: {}", model_name))?;
 
     let models_dir = get_models_directory(app_data_dir);
     let model_path = models_dir.join(&model.gguf_file);
@@ -219,3 +238,18 @@ pub const DEFAULT_IDLE_TIMEOUT_SECS: u64 = 300; // 5 minutes
 
 /// Generation timeout (how long to wait for a response)
 pub const GENERATION_TIMEOUT_SECS: u64 = 900; // 15 minutes
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn qwen_9b_model_definition_matches_download_artifact() {
+        let model = get_model_by_name("qwen3.5:9b").expect("Qwen 3.5 9B should be available");
+
+        assert_eq!(model.gguf_file, "Qwen3.5-9B-Q4_K_M.gguf");
+        assert_eq!(model.size_mb, 5417);
+        assert_eq!(model.layer_count, 32);
+        assert_eq!(model.template, "chatml");
+    }
+}
