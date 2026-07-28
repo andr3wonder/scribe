@@ -110,7 +110,7 @@ pub fn get_available_models() -> Vec<ModelDef> {
             name: "qwen3.5:9b".to_string(),
             display_name: "Qwen 3.5 9B (Recommended for 24GB+ Macs)".to_string(),
             gguf_file: "Qwen3.5-9B-Q4_K_M.gguf".to_string(),
-            template: "chatml".to_string(),
+            template: "chatml_no_think".to_string(),
             download_url: "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-Q4_K_M.gguf".to_string(),
             size_mb: 5417,
             context_size: 32768,
@@ -199,6 +199,19 @@ pub const CHATML_TEMPLATE: &str = "\
 <|im_start|>assistant
 ";
 
+/// ChatML with Qwen's prefilled empty reasoning block for direct answers.
+pub const CHATML_NO_THINK_TEMPLATE: &str = "\
+<|im_start|>system
+{system_prompt}<|im_end|>
+<|im_start|>user
+{user_prompt}<|im_end|>
+<|im_start|>assistant
+<think>
+
+</think>
+
+";
+
 /// Format a prompt using the specified template
 ///
 /// # Arguments
@@ -216,6 +229,7 @@ pub fn format_prompt(
     let template = match template_name {
         "gemma3" => GEMMA3_TEMPLATE,
         "chatml" => CHATML_TEMPLATE,
+        "chatml_no_think" => CHATML_NO_THINK_TEMPLATE,
         _ => return Err(anyhow!("Unknown template: {}", template_name)),
     };
 
@@ -250,6 +264,10 @@ mod tests {
         assert_eq!(model.gguf_file, "Qwen3.5-9B-Q4_K_M.gguf");
         assert_eq!(model.size_mb, 5417);
         assert_eq!(model.layer_count, 32);
-        assert_eq!(model.template, "chatml");
+        assert_eq!(model.template, "chatml_no_think");
+
+        let prompt = format_prompt(&model.template, "Summarize meetings.", "Transcript")
+            .expect("Qwen prompt should format");
+        assert!(prompt.ends_with("<think>\n\n</think>\n\n"));
     }
 }
