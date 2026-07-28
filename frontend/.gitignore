@@ -6,7 +6,9 @@
 **/models/*.bin
 /.pnp
 .pnp.*
-pnpm-lock.yaml
+# pnpm-lock.yaml is committed so CI resolves the same JS deps as local — an
+# unpinned @tauri-apps/api drifted ahead of the Rust tauri crate and failed
+# the Tauri version-match preflight.
 package-lock.json
 .yarn/*
 !.yarn/patches
