@@ -77,4 +77,5 @@ experiments/
 target/
 
 frontend/src-tauri/binaries/
-Cargo.lock
+# Cargo.lock is committed (this is an app) so CI builds are reproducible and
+# don't resolve a newer tauri-macros that breaks the command-handler exports.
