@@ -77,4 +77,6 @@ experiments/
 target/
 
 frontend/src-tauri/binaries/
-Cargo.lock
+# Cargo.lock is committed (this is an app, not a library) so CI builds are
+# reproducible. Leaving it un-pinned let CI resolve a newer tauri-macros whose
+# command-wrapper rename broke the summary/chat/summary_engine handler exports.
